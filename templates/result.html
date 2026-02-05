@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Results for {{ result.ticker }}</h5>
+
+          {% if result.rec_type == 'buy' %}
+            <div class="alert alert-success">{{ result.rec_text }}</div>
+          {% elif result.rec_type == 'avoid' %}
+            <div class="alert alert-danger">{{ result.rec_text }}</div>
+          {% else %}
+            <div class="alert alert-secondary">{{ result.rec_text }}</div>
+          {% endif %}
+
+          <p class="mb-1">Latest price: <strong>₹{{ '%.2f'|format(result.latest_price) if result.latest_price else 'N/A' }}</strong></p>
+          <p class="mb-1">Weeks available: <strong>{{ result.weeks_available }}</strong></p>
+          <p class="mb-3">200-week average (based on {{ result.weeks_used }} week(s)): <strong>₹{{ '%.2f'|format(result.avg_200_week) if result.avg_200_week else 'N/A' }}</strong></p>
+
+          {% if result.diff_pct is not none %}
+            <p class="mb-3">Difference vs average: <strong>{{ '%.2f'|format(result.diff_pct) }}%</strong></p>
+          {% endif %}
+
+          {% if result.daily_dates and result.daily_closes %}
+            <div class="mt-4">
+              <h6>Daily Close (last year)</h6>
+              <canvas id="priceChart" height="120"></canvas>
+            </div>
+          {% else %}
+            <p class="text-muted">No daily data available for chart.</p>
+          {% endif %}
+
+          <a href="/" class="btn btn-outline-secondary mt-3">Check another ticker</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% if result.daily_dates and result.daily_closes %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      const chartLabels = {{ result.daily_dates|tojson }};
+      const chartData = {{ result.daily_closes|tojson }};
+      const ctx = document.getElementById('priceChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: chartLabels,
+          datasets: [{
+            label: 'Close',
+            data: chartData,
+            borderColor: '#0d6efd',
+            backgroundColor: 'rgba(13,110,253,0.08)',
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: { x: { display: false } }
+        }
+      });
+    </script>
+  {% endif %}
+{% endblock %}
