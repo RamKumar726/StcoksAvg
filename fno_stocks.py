@@ -1,7 +1,6 @@
 import yfinance as yf
 import pandas as pd
 from stock_info import get_200_week_average
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # FNO Stocks List
@@ -55,16 +54,15 @@ def get_fno_stocks_with_prices(search_query: str = "") -> list:
     
     Returns list of dicts: [{"symbol": "RELIANCE", "price": 2850.50, "status": "success"}, ...]
     """
+    results = []
+    
     # Filter stocks by search query
     filtered_stocks = FNO_STOCKS
     if search_query:
         search_query = search_query.strip().upper()
         filtered_stocks = [stock for stock in FNO_STOCKS if stock.startswith(search_query)]
     
-    results = []
-    
-    # Fetch prices in parallel using ThreadPoolExecutor
-    def fetch_stock_data(symbol):
+    for symbol in filtered_stocks:
         try:
             # FNO stocks are NSE stocks - always use .NS suffix
             nse_ticker = symbol + ".NS"
@@ -91,40 +89,32 @@ def get_fno_stocks_with_prices(search_query: str = "") -> list:
                     series = pd.to_numeric(series, errors="coerce").dropna()
                     if not series.empty:
                         latest_price = float(series.iloc[-1])
-                        # Try to fetch 200-week average (cached, so fast on repeat)
-                        avg_200w = None
+                        # Try to fetch 200-week average (may be slower)
                         try:
                             avg_info = get_200_week_average(symbol)
                             avg_200w = avg_info.get("avg_200_week")
                         except Exception:
-                            pass  # If avg fetch fails, just skip it
+                            avg_200w = None
 
-                        return {
+                        results.append({
                             "symbol": symbol,
                             "price": latest_price,
                             "avg_200w": avg_200w,
                             "status": "success"
-                        }
+                        })
+                        continue
             
             # If we reach here, data fetch failed
-            return {
+            results.append({
                 "symbol": symbol,
                 "price": None,
-                "avg_200w": None,
                 "status": "no_data"
-            }
+            })
         except Exception as e:
-            return {
+            results.append({
                 "symbol": symbol,
                 "price": None,
-                "avg_200w": None,
                 "status": f"error: {str(e)}"
-            }
-    
-    # Use ThreadPoolExecutor to fetch multiple stocks in parallel
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(fetch_stock_data, symbol) for symbol in filtered_stocks]
-        for future in as_completed(futures):
-            results.append(future.result())
+            })
     
     return results

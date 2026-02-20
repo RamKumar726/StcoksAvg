@@ -3,24 +3,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 import requests
 from io import StringIO
-import time
-
-# Cache for 200-week averages (ticker -> {data, timestamp})
-_avg_200w_cache = {}
-CACHE_TIMEOUT = 3600  # 1 hour
 
 
 def get_200_week_average(ticker: str) -> dict:
     ticker = ticker.strip().upper()
     ticker = normalize_ticker(ticker)
-    
-    # Check cache first
-    now = time.time()
-    if ticker in _avg_200w_cache:
-        cached_data, timestamp = _avg_200w_cache[ticker]
-        if (now - timestamp) < CACHE_TIMEOUT:
-            return cached_data
-    
     end_date = datetime.today()
     start_date = end_date - timedelta(weeks=220)
 
@@ -94,7 +81,7 @@ def get_200_week_average(ticker: str) -> dict:
             rec_type = "neutral"
             rec_text = "Price equals the 200-week average"
 
-    result = {
+    return {
         "ticker": ticker,
         "weeks_available": weeks_available,
         "weeks_used": min(weeks_available, 200),
@@ -104,11 +91,6 @@ def get_200_week_average(ticker: str) -> dict:
         "rec_type": rec_type,
         "rec_text": rec_text,
     }
-    
-    # Cache the result with current timestamp
-    _avg_200w_cache[ticker] = (result, time.time())
-    
-    return result
 
 
 def get_daily_series(ticker: str, period: str = "1y") -> dict:
