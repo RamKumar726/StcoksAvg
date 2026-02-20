@@ -2,20 +2,358 @@
 
 {% block content %}
   <div class="row justify-content-center">
-    <div class="col-md-6">
+    <div class="col-md-8">
       <div class="card shadow-sm">
         <div class="card-body">
           <h5 class="card-title mb-3">Enter a ticker symbol</h5>
-          <form method="post" novalidate>
+          <form id="searchForm" onsubmit="handleFormSubmit(event)" novalidate>
             <div class="mb-3">
-              <input name="ticker" class="form-control form-control-lg" placeholder="e.g. AAPL or TSLA" autofocus>
+              <div class="position-relative">
+                <input id="tickerInput" name="ticker" class="form-control form-control-lg" placeholder="e.g. RELIANCE, INFY, TCS..." autocomplete="off" autofocus>
+                <div id="searchResults" class="position-absolute w-100" style="top: 100%; left: 0; background: white; border: 1px solid #ddd; border-top: none; max-height: 300px; overflow-y: auto; display: none; z-index: 1000;">
+                </div>
+              </div>
             </div>
             <div class="d-flex justify-content-end">
-              <button class="btn btn-primary">Get 200-week avg</button>
+              <button type="submit" class="btn btn-primary">Search</button>
             </div>
           </form>
         </div>
       </div>
+
+      <!-- Loading Spinner -->
+      <div id="loadingSpinner" class="mt-4" style="display: none; text-align: center;">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Fetching stock data...</p>
+      </div>
+
+      <!-- Stock Details Display -->
+      <div id="stockDetails" class="mt-4" style="display: none;">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+              <h5 class="card-title mb-0">Results for <span id="detailsTicker"></span></h5>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearDetails();">Close</button>
+            </div>
+
+            <div id="recommendationAlert"></div>
+
+            <!-- Moving Averages Table -->
+            <div class="table-responsive mb-4">
+              <table class="table table-bordered table-hover" style="margin-bottom: 0;">
+                <thead>
+                  <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <th>Period</th>
+                    <th>Average Price (₹)</th>
+                    <th>vs Current Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="background-color: #e8f4f8;">
+                    <td><strong>Current Price</strong></td>
+                    <td><strong id="detailsLatestPrice"></strong></td>
+                    <td>—</td>
+                  </tr>
+                  <tr style="background-color: #fff3cd;">
+                    <td>5 Days</td>
+                    <td id="avg5d"></td>
+                    <td id="vs5d"></td>
+                  </tr>
+                  <tr style="background-color: #d4edff;">
+                    <td>20 Days</td>
+                    <td id="avg20d"></td>
+                    <td id="vs20d"></td>
+                  </tr>
+                  <tr style="background-color: #d1e7dd;">
+                    <td>50 Days</td>
+                    <td id="avg50d"></td>
+                    <td id="vs50d"></td>
+                  </tr>
+                  <tr style="background-color: #cfe2ff;">
+                    <td>100 Days</td>
+                    <td id="avg100d"></td>
+                    <td id="vs100d"></td>
+                  </tr>
+                  <tr style="background-color: #d1e7dd;">
+                    <td>200 Days</td>
+                    <td id="avg200d"></td>
+                    <td id="vs200d"></td>
+                  </tr>
+                  <tr style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <td><strong>200 Weeks</strong></td>
+                    <td><strong id="avg200w"></strong></td>
+                    <td><strong id="vs200w"></strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 52-Week High/Low -->
+            <div class="row mt-3 mb-4">
+              <div class="col-md-6">
+                <div class="card border-success">
+                  <div class="card-body text-center">
+                    <h6 class="card-title text-success">52 Week High</h6>
+                    <p class="card-text" style="font-size: 1.5rem; font-weight: bold; color: #28a745;" id="week52High">—</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card border-danger">
+                  <div class="card-body text-center">
+                    <h6 class="card-title text-danger">52 Week Low</h6>
+                    <p class="card-text" style="font-size: 1.5rem; font-weight: bold; color: #dc3545;" id="week52Low">—</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="chartDiv" style="display: none;">
+              <div class="mt-4">
+                <h6>Daily Close (last year)</h6>
+                <canvas id="priceChart" height="120"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stocks lists moved to separate page (/stocks) -->
     </div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const tickerInput = document.getElementById('tickerInput');
+    const searchResults = document.getElementById('searchResults');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    let searchTimeout;
+
+    tickerInput.addEventListener('input', async (e) => {
+      const query = e.target.value.trim();
+      
+      // Clear previous timeout
+      clearTimeout(searchTimeout);
+      
+      // Clear details when user starts typing
+      clearDetails();
+      
+      if (query.length < 1) {
+        searchResults.style.display = 'none';
+        return;
+      }
+
+      // Show loading spinner briefly for search
+      searchTimeout = setTimeout(async () => {
+        try {
+          const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=10`);
+          if (!response.ok) {
+            console.error('Search failed:', response.statusText);
+            searchResults.style.display = 'none';
+            return;
+          }
+          const results = await response.json();
+
+          if (Array.isArray(results) && results.length > 0) {
+            searchResults.innerHTML = results.map((r, index) => `
+              <div class="p-2 border-bottom" style="cursor: pointer; transition: background-color 0.2s;" data-symbol="${r.symbol}" data-name="${r.name}" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='white'">
+                <strong>${r.symbol}</strong> — ${r.name}
+              </div>
+            `).join('');
+            
+            // Attach click handlers to dropdown items
+            document.querySelectorAll('#searchResults > div').forEach(item => {
+              item.addEventListener('click', function() {
+                const symbol = this.getAttribute('data-symbol');
+                selectStock(symbol);
+              });
+            });
+            
+            searchResults.style.display = 'block';
+          } else {
+            searchResults.innerHTML = '<div class="p-2 text-muted">No results found</div>';
+            searchResults.style.display = 'block';
+          }
+        } catch (error) {
+          console.error('Search error:', error);
+          searchResults.style.display = 'none';
+        }
+      }, 300); // Debounce search by 300ms
+    });
+
+    function selectStock(symbol) {
+      console.log('Selected stock:', symbol);
+      tickerInput.value = symbol;
+      searchResults.innerHTML = '';
+      searchResults.style.display = 'none';
+      // Fetch and display stock details
+      fetchStockDetails(symbol);
+    }
+
+    function handleFormSubmit(event) {
+      event.preventDefault();
+      const symbol = tickerInput.value.trim();
+      if (symbol) {
+        fetchStockDetails(symbol);
+      }
+    }
+
+    async function fetchStockDetails(ticker) {
+      try {
+        // Show loading spinner
+        loadingSpinner.style.display = 'block';
+        document.getElementById('stockDetails').style.display = 'none';
+        searchResults.style.display = 'none';
+
+        const response = await fetch(`/api/stock-details?ticker=${encodeURIComponent(ticker)}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        
+        displayStockDetails(data);
+      } catch (error) {
+        console.error('Error fetching stock details:', error);
+        loadingSpinner.style.display = 'none';
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    function displayStockDetails(data) {
+      // Hide loading spinner
+      loadingSpinner.style.display = 'none';
+
+      // Update ticker
+      document.getElementById('detailsTicker').textContent = data.ticker;
+      
+      // Latest price
+      const latestPrice = data.latest_price ? parseFloat(data.latest_price) : null;
+      const priceText = latestPrice ? `₹${latestPrice.toFixed(2)}` : 'N/A';
+      document.getElementById('detailsLatestPrice').textContent = priceText;
+
+      // Helper function to format price and calculate percentage difference
+      const formatAverageWithPercentage = (avg, current, cellId, vsCellId) => {
+        if (avg && current) {
+          document.getElementById(cellId).textContent = `₹${avg.toFixed(2)}`;
+          const diff = current - avg;
+          const diff_pct = (diff / avg * 100);
+          const color = diff_pct < 0 ? '#dc3545' : diff_pct > 0 ? '#28a745' : '#6c757d';
+          const sign = diff_pct > 0 ? '+' : '';
+          document.getElementById(vsCellId).innerHTML = `<span style="color: ${color}; font-weight: bold;">${sign}${diff_pct.toFixed(2)}%</span>`;
+        } else if (avg) {
+          document.getElementById(cellId).textContent = `₹${avg.toFixed(2)}`;
+          document.getElementById(vsCellId).innerHTML = '<span style="color: #6c757d;">—</span>';
+        } else {
+          document.getElementById(cellId).textContent = 'N/A';
+          document.getElementById(vsCellId).innerHTML = '<span style="color: #6c757d;">—</span>';
+        }
+      };
+
+      // Fill all averages with percentages
+      if (latestPrice) {
+        formatAverageWithPercentage(data.avg_5d, latestPrice, 'avg5d', 'vs5d');
+        formatAverageWithPercentage(data.avg_20d, latestPrice, 'avg20d', 'vs20d');
+        formatAverageWithPercentage(data.avg_50d, latestPrice, 'avg50d', 'vs50d');
+        formatAverageWithPercentage(data.avg_100d, latestPrice, 'avg100d', 'vs100d');
+        formatAverageWithPercentage(data.avg_200d, latestPrice, 'avg200d', 'vs200d');
+        formatAverageWithPercentage(data.avg_200w, latestPrice, 'avg200w', 'vs200w');
+      } else {
+        // If no latest price, just show averages without comparison
+        if (data.avg_5d) document.getElementById('avg5d').textContent = `₹${data.avg_5d.toFixed(2)}`;
+        if (data.avg_20d) document.getElementById('avg20d').textContent = `₹${data.avg_20d.toFixed(2)}`;
+        if (data.avg_50d) document.getElementById('avg50d').textContent = `₹${data.avg_50d.toFixed(2)}`;
+        if (data.avg_100d) document.getElementById('avg100d').textContent = `₹${data.avg_100d.toFixed(2)}`;
+        if (data.avg_200d) document.getElementById('avg200d').textContent = `₹${data.avg_200d.toFixed(2)}`;
+        if (data.avg_200w) document.getElementById('avg200w').textContent = `₹${data.avg_200w.toFixed(2)}`;
+      }
+
+      // Update 52-week high and low
+      document.getElementById('week52High').textContent = data.week_52_high ? `₹${data.week_52_high.toFixed(2)}` : '—';
+      document.getElementById('week52Low').textContent = data.week_52_low ? `₹${data.week_52_low.toFixed(2)}` : '—';
+
+      // Recommendation
+      const alertDiv = document.getElementById('recommendationAlert');
+      if (data.rec_type === 'buy') {
+        alertDiv.innerHTML = `<div class="alert alert-success">${data.rec_text}</div>`;
+      } else if (data.rec_type === 'avoid') {
+        alertDiv.innerHTML = `<div class="alert alert-danger">${data.rec_text}</div>`;
+      } else {
+        alertDiv.innerHTML = `<div class="alert alert-info">${data.rec_text}</div>`;
+      }
+
+      // Chart
+      const chartDiv = document.getElementById('chartDiv');
+      if (data.daily_dates && data.daily_dates.length > 0 && data.daily_closes && data.daily_closes.length > 0) {
+        chartDiv.style.display = 'block';
+        renderChart(data.daily_dates, data.daily_closes);
+      } else {
+        chartDiv.style.display = 'none';
+      }
+
+      // Show details section
+      document.getElementById('stockDetails').style.display = 'block';
+      // Scroll to details
+      document.getElementById('stockDetails').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function clearDetails() {
+      loadingSpinner.style.display = 'none';
+      document.getElementById('stockDetails').style.display = 'none';
+      searchResults.style.display = 'none';
+    }
+
+    let chartInstance = null;
+
+    function renderChart(dates, closes) {
+      const ctx = document.getElementById('priceChart').getContext('2d');
+      
+      // Destroy previous chart if exists
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Close',
+            data: closes,
+            borderColor: '#0d6efd',
+            backgroundColor: 'rgba(13,110,253,0.08)',
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { 
+            legend: { display: false }
+          },
+          scales: { 
+            x: { display: false },
+            y: { beginAtZero: false }
+          }
+        }
+      });
+    }
+
+    // Close dropdown on blur
+    tickerInput.addEventListener('blur', () => {
+      setTimeout(() => {
+        searchResults.style.display = 'none';
+      }, 150);
+    });
+
+    // Stocks lists are now on the separate `/stocks` page.
+  </script>
 {% endblock %}

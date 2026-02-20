@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-10">
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <h5 class="card-title mb-3">FNO Stocks - Latest Prices</h5>
+          <p class="text-muted mb-3">All FNO stocks with their latest prices (search to filter by first letter)</p>
+          
+          <div class="mb-3">
+            <input id="fnoSearchInput" type="text" class="form-control" placeholder="Filter FNO stocks (e.g., REL, ABB, TCS)..." autocomplete="off">
+          </div>
+
+          <!-- FNO Loading Spinner -->
+          <div id="fnoLoadingSpinner" class="text-center" style="display: none;">
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Fetching prices...</p>
+          </div>
+
+          <!-- FNO Stocks Table -->
+          <div id="fnoStocksContainer" style="display: none;">
+            <div class="table-responsive">
+              <table class="table table-striped table-hover" style="margin-bottom: 0;">
+                <thead style="background-color: #f8f9fa;">
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Latest Price (₹)</th>
+                    <th>200-Week Avg (₹)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="fnoStocksTable">
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- FNO No Results -->
+          <div id="fnoNoResults" style="display: none; text-align: center; padding: 20px;">
+            <p class="text-muted">No stocks found matching your search.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // FNO Stocks functionality
+    const fnoSearchInput = document.getElementById('fnoSearchInput');
+    const fnoLoadingSpinner = document.getElementById('fnoLoadingSpinner');
+    const fnoStocksContainer = document.getElementById('fnoStocksContainer');
+    const fnoStocksTable = document.getElementById('fnoStocksTable');
+    const fnoNoResults = document.getElementById('fnoNoResults');
+    let fnoSearchTimeout;
+    let allFnoStocks = []; // Cache all stocks
+
+    // Function to display FNO stocks
+    async function loadFnoStocks(searchQuery = '') {
+      fnoLoadingSpinner.style.display = 'block';
+      fnoStocksContainer.style.display = 'none';
+      fnoNoResults.style.display = 'none';
+
+      try {
+        const response = await fetch(`/api/fno-stocks?q=${encodeURIComponent(searchQuery)}`);
+
+        if (!response.ok) {
+          console.error('FNO search failed:', response.statusText);
+          fnoLoadingSpinner.style.display = 'none';
+          fnoNoResults.style.display = 'block';
+          fnoStocksContainer.style.display = 'none';
+          return;
+        }
+
+        const data = await response.json();
+        const stocks = data.stocks || [];
+
+        // Cache all stocks on first load
+        if (searchQuery === '') {
+          allFnoStocks = stocks;
+        }
+
+        fnoLoadingSpinner.style.display = 'none';
+
+        if (stocks.length === 0) {
+          fnoNoResults.style.display = 'block';
+          fnoStocksContainer.style.display = 'none';
+          return;
+        }
+
+        // Populate table
+        fnoStocksTable.innerHTML = stocks.map(stock => {
+          const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
+          const hasAvg = (stock.avg_200w && !isNaN(stock.avg_200w));
+          const avgRaw = hasAvg ? parseFloat(stock.avg_200w) : null;
+          const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
+          let statusBadge = '';
+          let avgStyle = 'color: #000;';
+          let rowStyle = '';
+
+          if (stock.status === 'success') {
+            statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
+          } else if (stock.status === 'no_data') {
+            statusBadge = '<span class="badge bg-warning">No Data</span>';
+          } else {
+            statusBadge = '<span class="badge bg-danger">Error</span>';
+          }
+
+          // Color entire row green when latest price is below 200-week avg
+          if (stock.price && hasAvg) {
+            try {
+              if (parseFloat(stock.price) < avgRaw) {
+                rowStyle = 'background-color: #d1e7dd;';
+                avgStyle = 'color: #198754; font-weight: 600;';
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          return `
+            <tr class="${rowStyle ? 'highlight-row' : ''}">
+              <td><strong>${stock.symbol}</strong></td>
+              <td>${priceText}</td>
+              <td style="${avgStyle}">${avgText}</td>
+              <td>${statusBadge}</td>
+            </tr>
+          `;
+        }).join('');
+
+        fnoStocksContainer.style.display = 'block';
+        fnoNoResults.style.display = 'none';
+      } catch (error) {
+        console.error('FNO search error:', error);
+        fnoLoadingSpinner.style.display = 'none';
+        fnoNoResults.style.display = 'block';
+        fnoStocksContainer.style.display = 'none';
+      }
+    }
+
+    // Load all FNO stocks on page load
+    loadFnoStocks();
+
+    // Search functionality
+    fnoSearchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim().toUpperCase();
+
+      clearTimeout(fnoSearchTimeout);
+
+      fnoSearchTimeout = setTimeout(() => {
+        if (query === '') {
+          // Show all stocks if search is empty
+          loadFnoStocks();
+        } else {
+          // Filter from cached stocks
+          const filtered = allFnoStocks.filter(stock => 
+            stock.symbol.startsWith(query)
+          );
+
+          fnoLoadingSpinner.style.display = 'none';
+
+          if (filtered.length === 0) {
+            fnoNoResults.style.display = 'block';
+            fnoStocksContainer.style.display = 'none';
+            return;
+          }
+
+          // Populate table with filtered results
+          fnoStocksTable.innerHTML = filtered.map(stock => {
+            const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
+            const hasAvg = (stock.avg_200w && !isNaN(stock.avg_200w));
+            const avgRaw = hasAvg ? parseFloat(stock.avg_200w) : null;
+            const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
+            let statusBadge = '';
+            let avgStyle = 'color: #000;';
+            let rowStyle = '';
+
+            if (stock.status === 'success') {
+              statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
+            } else if (stock.status === 'no_data') {
+              statusBadge = '<span class="badge bg-warning">No Data</span>';
+            } else {
+              statusBadge = '<span class="badge bg-danger">Error</span>';
+            }
+
+            // Color entire row green when latest price is below 200-week avg
+            if (stock.price && hasAvg) {
+              try {
+                if (parseFloat(stock.price) < avgRaw) {
+                  rowStyle = 'background-color: #d1e7dd;';
+                  avgStyle = 'color: #198754; font-weight: 600;';
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+
+            return `
+              <tr class="${rowStyle ? 'highlight-row' : ''}">
+                <td><strong>${stock.symbol}</strong></td>
+                <td>${priceText}</td>
+                <td style="${avgStyle}">${avgText}</td>
+                <td>${statusBadge}</td>
+              </tr>
+            `;
+          }).join('');
+
+          fnoStocksContainer.style.display = 'block';
+          fnoNoResults.style.display = 'none';
+        }
+      }, 300);
+    });
+  </script>
+{% endblock %}
