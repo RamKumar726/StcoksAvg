@@ -7,7 +7,9 @@ from io import StringIO
 
 def get_200_week_average(ticker: str) -> dict:
     ticker = ticker.strip().upper()
-    ticker = normalize_ticker(ticker)
+    # For NSE stocks (already have .NS), use directly; otherwise normalize
+    if not any(x in ticker for x in [".", "=", "^", "-"]):
+        ticker = ticker + ".NS"  # Assume NSE for stock list calls
     end_date = datetime.today()
     start_date = end_date - timedelta(weeks=220)
 

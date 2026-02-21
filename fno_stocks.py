@@ -108,12 +108,14 @@ def get_fno_stocks_with_prices(search_query: str = "") -> list:
             results.append({
                 "symbol": symbol,
                 "price": None,
+                "avg_200w": None,
                 "status": "no_data"
             })
         except Exception as e:
             results.append({
                 "symbol": symbol,
                 "price": None,
+                "avg_200w": None,
                 "status": f"error: {str(e)}"
             })
     
