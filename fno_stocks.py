@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-from stock_info import get_200_week_average
+from stock_info import get_200_week_average, get_all_averages
 
 
 # FNO Stocks List
@@ -89,16 +89,26 @@ def get_fno_stocks_with_prices(search_query: str = "") -> list:
                     series = pd.to_numeric(series, errors="coerce").dropna()
                     if not series.empty:
                         latest_price = float(series.iloc[-1])
-                        # Try to fetch 200-week average (may be slower)
+                        # Fetch all moving averages (may be slower)
                         try:
-                            avg_info = get_200_week_average(symbol)
-                            avg_200w = avg_info.get("avg_200_week")
+                            avg_info = get_all_averages(symbol)
+                            avg_5d = avg_info.get("avg_5d")
+                            avg_20d = avg_info.get("avg_20d")
+                            avg_50d = avg_info.get("avg_50d")
+                            avg_100d = avg_info.get("avg_100d")
+                            avg_200d = avg_info.get("avg_200d")
+                            avg_200w = avg_info.get("avg_200w")
                         except Exception:
-                            avg_200w = None
+                            avg_5d = avg_20d = avg_50d = avg_100d = avg_200d = avg_200w = None
 
                         results.append({
                             "symbol": symbol,
                             "price": latest_price,
+                            "avg_5d": avg_5d,
+                            "avg_20d": avg_20d,
+                            "avg_50d": avg_50d,
+                            "avg_100d": avg_100d,
+                            "avg_200d": avg_200d,
                             "avg_200w": avg_200w,
                             "status": "success"
                         })
@@ -108,6 +118,11 @@ def get_fno_stocks_with_prices(search_query: str = "") -> list:
             results.append({
                 "symbol": symbol,
                 "price": None,
+                "avg_5d": None,
+                "avg_20d": None,
+                "avg_50d": None,
+                "avg_100d": None,
+                "avg_200d": None,
                 "avg_200w": None,
                 "status": "no_data"
             })
@@ -115,6 +130,11 @@ def get_fno_stocks_with_prices(search_query: str = "") -> list:
             results.append({
                 "symbol": symbol,
                 "price": None,
+                "avg_5d": None,
+                "avg_20d": None,
+                "avg_50d": None,
+                "avg_100d": None,
+                "avg_200d": None,
                 "avg_200w": None,
                 "status": f"error: {str(e)}"
             })

@@ -12,6 +12,17 @@
             <input id="fnoSearchInput" type="text" class="form-control" placeholder="Filter FNO stocks (e.g., REL, ABB, TCS)..." autocomplete="off">
           </div>
 
+          <div class="mb-3">
+            <div class="btn-group" role="group" aria-label="MA Select" id="fnoMaButtons">
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_5d">5 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_20d">20 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_50d">50 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_100d">100 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_200d">200 days</button>
+              <button type="button" class="btn btn-outline-secondary active" data-ma="avg_200w">200 weeks</button>
+            </div>
+          </div>
+
           <!-- FNO Loading Spinner -->
           <div id="fnoLoadingSpinner" class="text-center" style="display: none;">
             <div class="spinner-border spinner-border-sm text-primary" role="status">
@@ -28,7 +39,7 @@
                   <tr>
                     <th>Symbol</th>
                     <th>Latest Price (₹)</th>
-                    <th>200-Week Avg (₹)</th>
+                    <th id="fnoAvgHeader">200-Week Avg (₹)</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -56,6 +67,51 @@
     const fnoNoResults = document.getElementById('fnoNoResults');
     let fnoSearchTimeout;
     let allFnoStocks = []; // Cache all stocks
+
+    // Selected moving average key
+    let selectedFnoAvg = 'avg_200w';
+
+    // Render function for table rows
+    function renderFnoStocksTable(stocks) {
+      fnoStocksTable.innerHTML = stocks.map(stock => {
+        const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
+        const hasAvg = (stock[selectedFnoAvg] && !isNaN(stock[selectedFnoAvg]));
+        const avgRaw = hasAvg ? parseFloat(stock[selectedFnoAvg]) : null;
+        const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
+        let statusBadge = '';
+        let avgStyle = 'color: #000;';
+        let rowStyle = '';
+
+        if (stock.status === 'success') {
+          statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
+        } else if (stock.status === 'no_data') {
+          statusBadge = '<span class="badge bg-warning">No Data</span>';
+        } else {
+          statusBadge = '<span class="badge bg-danger">Error</span>';
+        }
+
+        // Color entire row green when latest price is below selected avg
+        if (stock.price && hasAvg) {
+          try {
+            if (parseFloat(stock.price) < avgRaw) {
+              rowStyle = 'background-color: #d1e7dd;';
+              avgStyle = 'color: #198754; font-weight: 600;';
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        return `
+          <tr class="${rowStyle ? 'highlight-row' : ''}">
+            <td><strong>${stock.symbol}</strong></td>
+            <td>${priceText}</td>
+            <td style="${avgStyle}">${avgText}</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      }).join('');
+    }
 
     // Function to display FNO stocks
     async function loadFnoStocks(searchQuery = '') {
@@ -90,46 +146,8 @@
           return;
         }
 
-        // Populate table
-        fnoStocksTable.innerHTML = stocks.map(stock => {
-          const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
-          const hasAvg = (stock.avg_200w && !isNaN(stock.avg_200w));
-          const avgRaw = hasAvg ? parseFloat(stock.avg_200w) : null;
-          const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
-          let statusBadge = '';
-          let avgStyle = 'color: #000;';
-          let rowStyle = '';
-
-          if (stock.status === 'success') {
-            statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
-          } else if (stock.status === 'no_data') {
-            statusBadge = '<span class="badge bg-warning">No Data</span>';
-          } else {
-            statusBadge = '<span class="badge bg-danger">Error</span>';
-          }
-
-          // Color entire row green when latest price is below 200-week avg
-          if (stock.price && hasAvg) {
-            try {
-              if (parseFloat(stock.price) < avgRaw) {
-                rowStyle = 'background-color: #d1e7dd;';
-                avgStyle = 'color: #198754; font-weight: 600;';
-              }
-            } catch (e) {
-              // ignore
-            }
-          }
-
-          return `
-            <tr class="${rowStyle ? 'highlight-row' : ''}">
-              <td><strong>${stock.symbol}</strong></td>
-              <td>${priceText}</td>
-              <td style="${avgStyle}">${avgText}</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-        }).join('');
-
+        // Populate table using render function
+        renderFnoStocksTable(stocks);
         fnoStocksContainer.style.display = 'block';
         fnoNoResults.style.display = 'none';
       } catch (error) {
@@ -167,50 +185,40 @@
             return;
           }
 
-          // Populate table with filtered results
-          fnoStocksTable.innerHTML = filtered.map(stock => {
-            const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
-            const hasAvg = (stock.avg_200w && !isNaN(stock.avg_200w));
-            const avgRaw = hasAvg ? parseFloat(stock.avg_200w) : null;
-            const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
-            let statusBadge = '';
-            let avgStyle = 'color: #000;';
-            let rowStyle = '';
-
-            if (stock.status === 'success') {
-              statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
-            } else if (stock.status === 'no_data') {
-              statusBadge = '<span class="badge bg-warning">No Data</span>';
-            } else {
-              statusBadge = '<span class="badge bg-danger">Error</span>';
-            }
-
-            // Color entire row green when latest price is below 200-week avg
-            if (stock.price && hasAvg) {
-              try {
-                if (parseFloat(stock.price) < avgRaw) {
-                  rowStyle = 'background-color: #d1e7dd;';
-                  avgStyle = 'color: #198754; font-weight: 600;';
-                }
-              } catch (e) {
-                // ignore
-              }
-            }
-
-            return `
-              <tr class="${rowStyle ? 'highlight-row' : ''}">
-                <td><strong>${stock.symbol}</strong></td>
-                <td>${priceText}</td>
-                <td style="${avgStyle}">${avgText}</td>
-                <td>${statusBadge}</td>
-              </tr>
-            `;
-          }).join('');
-
+          // Populate table with filtered results using render function
+          renderFnoStocksTable(filtered);
           fnoStocksContainer.style.display = 'block';
           fnoNoResults.style.display = 'none';
         }
       }, 300);
+    });
+
+    // Helper to map MA key to human label
+    function getMaLabel(maKey) {
+      switch (maKey) {
+        case 'avg_5d': return '5-Day Avg (₹)';
+        case 'avg_20d': return '20-Day Avg (₹)';
+        case 'avg_50d': return '50-Day Avg (₹)';
+        case 'avg_100d': return '100-Day Avg (₹)';
+        case 'avg_200d': return '200-Day Avg (₹)';
+        case 'avg_200w': return '200-Week Avg (₹)';
+        default: return 'Average (₹)';
+      }
+    }
+
+    // MA button handling
+    document.getElementById('fnoMaButtons').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-ma]');
+      if (!btn) return;
+      // update active class
+      document.querySelectorAll('#fnoMaButtons button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedFnoAvg = btn.getAttribute('data-ma');
+      // update header label
+      const header = document.getElementById('fnoAvgHeader');
+      if (header) header.textContent = getMaLabel(selectedFnoAvg);
+      // re-render using cached stocks
+      if (allFnoStocks && allFnoStocks.length) renderFnoStocksTable(allFnoStocks);
     });
   </script>
 {% endblock %}

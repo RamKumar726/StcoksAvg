@@ -12,6 +12,17 @@
             <input id="niftyNext50SearchInput" type="text" class="form-control" placeholder="Filter NIFTY Next 50 stocks (e.g., ABB, DLF, VEDL)..." autocomplete="off">
           </div>
 
+          <div class="mb-3">
+            <div class="btn-group" role="group" aria-label="MA Select" id="niftyNext50MaButtons">
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_5d">5 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_20d">20 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_50d">50 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_100d">100 days</button>
+              <button type="button" class="btn btn-outline-secondary" data-ma="avg_200d">200 days</button>
+              <button type="button" class="btn btn-outline-secondary active" data-ma="avg_200w">200 weeks</button>
+            </div>
+          </div>
+
           <!-- NIFTY Next 50 Loading Spinner -->
           <div id="niftyNext50LoadingSpinner" class="text-center" style="display: none;">
             <div class="spinner-border spinner-border-sm text-primary" role="status">
@@ -28,7 +39,7 @@
                   <tr>
                     <th>Symbol</th>
                     <th>Latest Price (₹)</th>
-                    <th>200-Week Avg (₹)</th>
+                    <th id="niftyNext50AvgHeader">200-Week Avg (₹)</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -48,6 +59,48 @@
   </div>
 
   <script>
+    // Selected moving average key
+    let selectedNiftyNext50Avg = 'avg_200w';
+
+    function renderNiftyNext50StocksTable(stocks) {
+      niftyNext50StocksTable.innerHTML = stocks.map(stock => {
+        const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
+        const hasAvg = (stock[selectedNiftyNext50Avg] && !isNaN(stock[selectedNiftyNext50Avg]));
+        const avgRaw = hasAvg ? parseFloat(stock[selectedNiftyNext50Avg]) : null;
+        const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
+        let statusBadge = '';
+        let rowStyle = '';
+        let avgStyle = 'color: #000;';
+
+        if (stock.status === 'success') {
+          statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
+        } else if (stock.status === 'no_data') {
+          statusBadge = '<span class="badge bg-warning">No Data</span>';
+        } else {
+          statusBadge = '<span class="badge bg-danger">Error</span>';
+        }
+
+        // Highlight row green if price < selected avg
+        if (stock.price && hasAvg) {
+          try {
+            if (parseFloat(stock.price) < avgRaw) {
+              rowStyle = 'background-color: #d1e7dd;';
+              avgStyle = 'color: #198754; font-weight: 600;';
+            }
+          } catch (e) {}
+        }
+
+        return `
+          <tr class="${rowStyle ? 'highlight-row' : ''}">
+            <td><strong>${stock.symbol}</strong></td>
+            <td>${priceText}</td>
+            <td style="${avgStyle}">${avgText}</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
     // NIFTY Next 50 Stocks functionality
     const niftyNext50SearchInput = document.getElementById('niftyNext50SearchInput');
     const niftyNext50LoadingSpinner = document.getElementById('niftyNext50LoadingSpinner');
@@ -90,45 +143,8 @@
           return;
         }
 
-        // Populate table
-        niftyNext50StocksTable.innerHTML = stocks.map(stock => {
-          const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
-          const hasAvg = (stock.avg_200w && !isNaN(stock.avg_200w));
-          const avgRaw = hasAvg ? parseFloat(stock.avg_200w) : null;
-          const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
-          let statusBadge = '';
-          let rowStyle = '';
-          let avgStyle = 'color: #000;';
-
-          if (stock.status === 'success') {
-            statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
-          } else if (stock.status === 'no_data') {
-            statusBadge = '<span class="badge bg-warning">No Data</span>';
-          } else {
-            statusBadge = '<span class="badge bg-danger">Error</span>';
-          }
-
-          // Highlight row green if price < 200-week avg
-          if (stock.price && hasAvg) {
-            try {
-              if (parseFloat(stock.price) < avgRaw) {
-                rowStyle = 'background-color: #d1e7dd;';
-                avgStyle = 'color: #198754; font-weight: 600;';
-              }
-            } catch (e) {
-              // ignore
-            }
-          }
-
-          return `
-            <tr class="${rowStyle ? 'highlight-row' : ''}">
-              <td><strong>${stock.symbol}</strong></td>
-              <td>${priceText}</td>
-              <td style="${avgStyle}">${avgText}</td>
-              <td>${statusBadge}</td>
-            </tr>
-          `;
-        }).join('');
+        // Populate table using render function
+        renderNiftyNext50StocksTable(stocks);
 
         niftyNext50StocksContainer.style.display = 'block';
         niftyNext50NoResults.style.display = 'none';
@@ -167,50 +183,39 @@
             return;
           }
 
-          // Populate table with filtered results
-          niftyNext50StocksTable.innerHTML = filtered.map(stock => {
-            const priceText = stock.price ? `₹${stock.price.toFixed(2)}` : 'N/A';
-            const hasAvg = (stock.avg_200w && !isNaN(stock.avg_200w));
-            const avgRaw = hasAvg ? parseFloat(stock.avg_200w) : null;
-            const avgText = hasAvg ? `₹${avgRaw.toFixed(2)}` : '—';
-            let statusBadge = '';
-            let rowStyle = '';
-            let avgStyle = 'color: #000;';
-
-            if (stock.status === 'success') {
-              statusBadge = '<span class="badge bg-success">✓ Fetched</span>';
-            } else if (stock.status === 'no_data') {
-              statusBadge = '<span class="badge bg-warning">No Data</span>';
-            } else {
-              statusBadge = '<span class="badge bg-danger">Error</span>';
-            }
-
-            // Highlight row green if price < 200-week avg
-            if (stock.price && hasAvg) {
-              try {
-                if (parseFloat(stock.price) < avgRaw) {
-                  rowStyle = 'background-color: #d1e7dd;';
-                  avgStyle = 'color: #198754; font-weight: 600;';
-                }
-              } catch (e) {
-                // ignore
-              }
-            }
-
-            return `
-              <tr class="${rowStyle ? 'highlight-row' : ''}">
-                <td><strong>${stock.symbol}</strong></td>
-                <td>${priceText}</td>
-                <td style="${avgStyle}">${avgText}</td>
-                <td>${statusBadge}</td>
-              </tr>
-            `;
-          }).join('');
+          // Populate table with filtered results using render function
+          renderNiftyNext50StocksTable(filtered);
 
           niftyNext50StocksContainer.style.display = 'block';
           niftyNext50NoResults.style.display = 'none';
         }
       }, 300);
+    });
+
+    // Helper to map MA key to human label
+    function getMaLabel(maKey) {
+      switch (maKey) {
+        case 'avg_5d': return '5-Day Avg (₹)';
+        case 'avg_20d': return '20-Day Avg (₹)';
+        case 'avg_50d': return '50-Day Avg (₹)';
+        case 'avg_100d': return '100-Day Avg (₹)';
+        case 'avg_200d': return '200-Day Avg (₹)';
+        case 'avg_200w': return '200-Week Avg (₹)';
+        default: return 'Average (₹)';
+      }
+    }
+
+    // MA button handling
+    document.getElementById('niftyNext50MaButtons').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-ma]');
+      if (!btn) return;
+      document.querySelectorAll('#niftyNext50MaButtons button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedNiftyNext50Avg = btn.getAttribute('data-ma');
+      // update header label
+      const header = document.getElementById('niftyNext50AvgHeader');
+      if (header) header.textContent = getMaLabel(selectedNiftyNext50Avg);
+      if (allNiftyNext50Stocks && allNiftyNext50Stocks.length) renderNiftyNext50StocksTable(allNiftyNext50Stocks);
     });
   </script>
 {% endblock %}

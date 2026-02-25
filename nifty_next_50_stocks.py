@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-from stock_info import get_200_week_average
+from stock_info import get_200_week_average, get_all_averages
 
 
 # NIFTY Next 50 Stocks List
@@ -99,19 +99,27 @@ def get_nifty_next_50_stocks_with_prices(search_query: str = "") -> list:
                     series = pd.to_numeric(series, errors="coerce").dropna()
                     if not series.empty:
                         latest_price = float(series.iloc[-1])
-                        
-                        # Fetch 200-week average
-                        avg_200w = None
+
+                        # Fetch all moving averages
                         try:
-                            avg_data = get_200_week_average(symbol)
-                            if avg_data:
-                                avg_200w = avg_data.get("avg_200_week")
+                            avg_data = get_all_averages(symbol)
+                            avg_5d = avg_data.get("avg_5d")
+                            avg_20d = avg_data.get("avg_20d")
+                            avg_50d = avg_data.get("avg_50d")
+                            avg_100d = avg_data.get("avg_100d")
+                            avg_200d = avg_data.get("avg_200d")
+                            avg_200w = avg_data.get("avg_200w")
                         except Exception:
-                            pass  # If avg fetch fails, just leave as None
-                        
+                            avg_5d = avg_20d = avg_50d = avg_100d = avg_200d = avg_200w = None
+
                         results.append({
                             "symbol": symbol,
                             "price": latest_price,
+                            "avg_5d": avg_5d,
+                            "avg_20d": avg_20d,
+                            "avg_50d": avg_50d,
+                            "avg_100d": avg_100d,
+                            "avg_200d": avg_200d,
                             "avg_200w": avg_200w,
                             "status": "success"
                         })
@@ -121,6 +129,11 @@ def get_nifty_next_50_stocks_with_prices(search_query: str = "") -> list:
             results.append({
                 "symbol": symbol,
                 "price": None,
+                "avg_5d": None,
+                "avg_20d": None,
+                "avg_50d": None,
+                "avg_100d": None,
+                "avg_200d": None,
                 "avg_200w": None,
                 "status": "no_data"
             })
@@ -128,6 +141,11 @@ def get_nifty_next_50_stocks_with_prices(search_query: str = "") -> list:
             results.append({
                 "symbol": symbol,
                 "price": None,
+                "avg_5d": None,
+                "avg_20d": None,
+                "avg_50d": None,
+                "avg_100d": None,
+                "avg_200d": None,
                 "avg_200w": None,
                 "status": f"error: {str(e)}"
             })
