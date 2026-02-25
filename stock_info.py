@@ -24,12 +24,55 @@ def get_200_week_average(ticker: str) -> dict:
     )
 
     if df is None or df.empty:
-        # fallback to ticker.history
-        tk = yf.Ticker(ticker)
-        df = tk.history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), interval="1wk", auto_adjust=True)
+        # fallback to ticker.history for weekly
+        try:
+            tk = yf.Ticker(ticker)
+            df = tk.history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), interval="1wk", auto_adjust=True)
+        except Exception:
+            df = None
 
+    # If weekly data still not available, try fetching daily data and resampling to weekly
     if df is None or df.empty:
-        raise ValueError("No weekly data found for ticker")
+        try:
+            # fetch longer daily history and resample to weekly closes
+            long_start = end_date - timedelta(days=1600)  # ~ ~5 years+ to be safe
+            df_daily = yf.download(
+                ticker,
+                start=long_start.strftime("%Y-%m-%d"),
+                end=end_date.strftime("%Y-%m-%d"),
+                interval="1d",
+                progress=False,
+                auto_adjust=True,
+            )
+            if (df_daily is None or df_daily.empty):
+                tk = yf.Ticker(ticker)
+                df_daily = tk.history(start=long_start.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), interval="1d", auto_adjust=True)
+
+            if df_daily is not None and not df_daily.empty:
+                # pick Close or Adj Close
+                col = None
+                for c in df_daily.columns:
+                    name = c if not isinstance(c, tuple) else c[-1]
+                    if name in ("Adj Close", "Close"):
+                        col = c
+                        if name == "Adj Close":
+                            break
+                if col is None:
+                    numeric_cols = [c for c in df_daily.columns if pd.api.types.is_numeric_dtype(df_daily[c].dtype)]
+                    if numeric_cols:
+                        col = numeric_cols[0]
+
+                if col is not None:
+                    series_daily = df_daily[col]
+                    if isinstance(series_daily, pd.DataFrame):
+                        series_daily = series_daily.iloc[:, 0]
+                    series_daily = pd.to_numeric(series_daily, errors="coerce").dropna()
+                    # resample to weekly using last close of week (Friday)
+                    weekly = series_daily.resample('W-FRI').last().dropna()
+                    # convert weekly series to a DataFrame-like object for downstream code
+                    df = weekly.to_frame(name='Close')
+        except Exception:
+            df = None
 
     # Determine the price column: prefer 'Adj Close', then 'Close'. Handle MultiIndex columns.
     col_candidates = []
@@ -46,7 +89,17 @@ def get_200_week_average(ticker: str) -> dict:
         # fallback: try taking the first numeric column
         numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(df[c].dtype)]
         if not numeric_cols:
-            raise ValueError("No numeric price column found in data")
+            # return a structured result with None values instead of raising to keep callers resilient
+            return {
+                "ticker": ticker,
+                "weeks_available": 0,
+                "weeks_used": 0,
+                "avg_200_week": None,
+                "latest_price": None,
+                "diff_pct": None,
+                "rec_type": "neutral",
+                "rec_text": "No numeric price column found",
+            }
         col = numeric_cols[0]
     else:
         # prefer Adj Close if present
@@ -287,46 +340,69 @@ def get_all_averages(ticker: str) -> dict:
     except Exception as e:
         raise ValueError(f"Failed to fetch latest price: {e}")
     
-    # Calculate all moving averages using normalized ticker
+    # Calculate all moving averages using normalized ticker; be resilient to per-call failures
+    avg_5d = avg_20d = avg_50d = avg_100d = avg_200d = avg_200w = None
+    week_52_high = week_52_low = None
+
     try:
-        avg_5d = get_moving_average(normalized_ticker, 5)
-        avg_20d = get_moving_average(normalized_ticker, 20)
-        avg_50d = get_moving_average(normalized_ticker, 50)
-        avg_100d = get_moving_average(normalized_ticker, 100)
-        avg_200d = get_moving_average(normalized_ticker, 200)
-        
-        # Get 200-week average
-        result_200w = get_200_week_average(ticker)
-        avg_200w = result_200w.get("avg_200_week")
-        
-        # Get 52-week high and low
-        tk = yf.Ticker(normalized_ticker)
         try:
+            avg_5d = get_moving_average(normalized_ticker, 5)
+        except Exception as e:
+            print(f"get_all_averages: avg_5d failed for {normalized_ticker}: {e}")
+
+        try:
+            avg_20d = get_moving_average(normalized_ticker, 20)
+        except Exception as e:
+            print(f"get_all_averages: avg_20d failed for {normalized_ticker}: {e}")
+
+        try:
+            avg_50d = get_moving_average(normalized_ticker, 50)
+        except Exception as e:
+            print(f"get_all_averages: avg_50d failed for {normalized_ticker}: {e}")
+
+        try:
+            avg_100d = get_moving_average(normalized_ticker, 100)
+        except Exception as e:
+            print(f"get_all_averages: avg_100d failed for {normalized_ticker}: {e}")
+
+        try:
+            avg_200d = get_moving_average(normalized_ticker, 200)
+        except Exception as e:
+            print(f"get_all_averages: avg_200d failed for {normalized_ticker}: {e}")
+
+        # Get 200-week average (use original ticker to let get_200_week_average decide suffixing)
+        try:
+            result_200w = get_200_week_average(ticker)
+            if isinstance(result_200w, dict):
+                avg_200w = result_200w.get("avg_200_week")
+        except Exception as e:
+            print(f"get_all_averages: avg_200w failed for {normalized_ticker}: {e}")
+
+        # Get 52-week high and low (best-effort)
+        try:
+            tk = yf.Ticker(normalized_ticker)
             info = tk.info
             week_52_high = info.get("fiftyTwoWeekHigh")
             week_52_low = info.get("fiftyTwoWeekLow")
-            
-            # Fallback: try alternative keys
+            # Fallback alternative keys
             if not week_52_high:
                 week_52_high = info.get("fiftyTwoWeek", {}).get("high")
             if not week_52_low:
                 week_52_low = info.get("fiftyTwoWeek", {}).get("low")
-            
-            # Convert to float if valid
             if isinstance(week_52_high, (int, float)):
                 week_52_high = float(week_52_high)
             else:
                 week_52_high = None
-                
             if isinstance(week_52_low, (int, float)):
                 week_52_low = float(week_52_low)
             else:
                 week_52_low = None
-        except Exception:
+        except Exception as e:
+            print(f"get_all_averages: 52-week data failed for {normalized_ticker}: {e}")
             week_52_high = None
             week_52_low = None
     except Exception as e:
-        raise ValueError(f"Failed to calculate averages: {e}")
+        print(f"get_all_averages: unexpected error for {normalized_ticker}: {e}")
     
     # Determine recommendation based on 200-week average
     if avg_200w is None or latest_price is None:
